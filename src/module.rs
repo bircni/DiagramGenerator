@@ -13,12 +13,12 @@ const MODULE_TEMPLATE: &str = r#"
 "#;
 
 #[derive(Serialize)]
-pub struct ModuleContext {
+pub struct ModContext {
     pub name: String,
     pub contents: String,
 }
 
-impl ToHtml for ModuleContext {
+impl ToHtml for ModContext {
     fn to_html(&self) -> String {
         let mut tt = TinyTemplate::new();
         tt.set_default_formatter(&tinytemplate::format_unescaped);

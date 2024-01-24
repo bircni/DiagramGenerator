@@ -1,8 +1,15 @@
+#![warn(clippy::pedantic)]
+#![warn(clippy::perf)]
+#![warn(clippy::style)]
+#![deny(clippy::all)]
+
+use std::{cmp::Ordering, env, fs, path::Path};
+
 use anyhow::Context;
 use itertools::Itertools;
-use module::ModuleContext;
+use module::ModContext;
 use serde_json::json;
-use syn::{spanned::Spanned, Field, Visibility};
+use syn::{parse_file, spanned::Spanned, Field, Item, Visibility};
 use tinytemplate::TinyTemplate;
 
 use crate::structs::{StructContext, StructFieldContext};
@@ -32,7 +39,7 @@ const HTML_TEMPLATE: &str = r#"
 "#;
 
 fn main() {
-    let path = std::env::args().nth(1).unwrap();
+    let path = env::args().nth(1).unwrap();
 
     let contents = parse_file_recursive(path).expect("Failed to parse file");
 
@@ -48,27 +55,27 @@ fn main() {
         .render("html", &json!({"contents": contents}))
         .expect("Failed to render template");
 
-    std::fs::write("diagram.html", html).expect("Failed to write file");
+    fs::write("diagram.html", html).expect("Failed to write file");
 }
 
-fn parse_file_recursive<P: AsRef<std::path::Path>>(path: P) -> anyhow::Result<String> {
-    let contents = std::fs::read_to_string(path.as_ref())
+fn parse_file_recursive<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
+    let contents = fs::read_to_string(path.as_ref())
         .context(format!("Failed to read file {}", path.as_ref().display()))?;
 
-    Ok(syn::parse_file(contents.as_str())
+    Ok(parse_file(contents.as_str())
         .unwrap()
         .items
         .into_iter()
         .sorted_by(|a, b| match (a, b) {
-            (syn::Item::Mod(_), _) => std::cmp::Ordering::Greater,
-            (_, syn::Item::Mod(_)) => std::cmp::Ordering::Less,
-            _ => std::cmp::Ordering::Equal,
+            (Item::Mod(_), _) => Ordering::Greater,
+            (_, Item::Mod(_)) => Ordering::Less,
+            _ => Ordering::Equal,
         })
         .map(|i| traverse_ast(path.as_ref(), i))
         .join(""))
 }
 
-fn traverse_ast<P: AsRef<std::path::Path>>(path: P, ast: syn::Item) -> String {
+fn traverse_ast<P: AsRef<Path>>(path: P, ast: Item) -> String {
     match ast {
         /*syn::Item::Impl(imp) => imp
         .items
@@ -94,7 +101,7 @@ fn traverse_ast<P: AsRef<std::path::Path>>(path: P, ast: syn::Item) -> String {
             )
         })
         .join(""),*/
-        syn::Item::Struct(s) => {
+        Item::Struct(s) => {
             let (public, private) = s
                 .fields
                 .clone()
@@ -116,34 +123,34 @@ fn traverse_ast<P: AsRef<std::path::Path>>(path: P, ast: syn::Item) -> String {
                         name: f
                             .ident
                             .as_ref()
-                            .map(|i| i.to_string())
-                            .unwrap_or(format!("{}", i)),
+                            .map(ToString::to_string)
+                            .unwrap_or(format!("{i}")),
                         type_: f.ty.span().source_text().unwrap().to_string(),
                     })
                     .collect(),
                 private_fields: private
                     .into_iter()
-                    .map(|(i, f)| structs::StructFieldContext {
+                    .map(|(i, f)| StructFieldContext {
                         name: f
                             .ident
                             .as_ref()
-                            .map(|i| i.to_string())
-                            .unwrap_or(format!("{}", i)),
+                            .map(ToString::to_string)
+                            .unwrap_or(format!("{i}")),
                         type_: f.ty.span().source_text().unwrap().to_string(),
                     })
                     .collect(),
             }
             .to_html()
         }
-        syn::Item::Mod(m) => ModuleContext {
+        Item::Mod(m) => ModContext {
             name: m.ident.to_string(),
             contents: if let Some((_, items)) = m.content {
                 items
                     .into_iter()
                     .sorted_by(|a, b| match (a, b) {
-                        (syn::Item::Mod(_), _) => std::cmp::Ordering::Greater,
-                        (_, syn::Item::Mod(_)) => std::cmp::Ordering::Less,
-                        _ => std::cmp::Ordering::Equal,
+                        (Item::Mod(_), _) => Ordering::Greater,
+                        (_, Item::Mod(_)) => Ordering::Less,
+                        _ => Ordering::Equal,
                     })
                     .map(|i| traverse_ast(path.as_ref(), i))
                     .collect()
@@ -164,6 +171,6 @@ fn traverse_ast<P: AsRef<std::path::Path>>(path: P, ast: syn::Item) -> String {
             },
         }
         .to_html(),
-        _ => "".to_string(),
+        _ => String::new(),
     }
 }
