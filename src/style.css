@@ -1,0 +1,112 @@
+
+:root {
+    --bg: #72727240;
+    --border: 1px solid #333;
+}
+
+html {
+    font-family: monospace;
+}
+
+body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+h1 {
+    text-align: center;
+}
+
+.module::before {
+    content: "";
+    display: block;
+    height: 2rem;
+    width: 5rem;
+    position: relative;
+    top: calc(-2rem - 2px);
+    left: -1px;
+    background-color: var(--bg);
+    border: var(--border);
+    border-radius: 0.25rem 0.25rem 0 0;
+    margin-bottom: -2rem;
+}
+
+.module {
+    background-color: var(--bg);
+    border: var(--border);
+    border-radius: 0 0.25rem 0.25rem 0.25rem;
+    margin: 5rem 1rem 5rem 1rem;
+    width: fit-content;
+}
+
+.module-contents>.module {
+    margin: 3rem 1rem 1rem 1rem;
+}
+
+.module-name {
+    font-size: x-large;
+    font-weight: bold;
+    padding: 0.5rem;
+    text-align: center;
+}
+
+.module-contents {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+}
+
+.struct {
+    display: flex;
+    flex-direction: column;
+    align-items: start;
+    justify-content: start;
+    padding: 0.5rem;
+    padding-top: 0;
+    margin: 1rem;
+    border: var(--border);
+    border-radius: 0.25rem;
+}
+
+.struct-public-fields,
+.struct-private-fields {
+    display: flex;
+    flex-direction: column;
+    align-items: start;
+    justify-content: start;
+}
+
+.struct-name {
+    font-size: large;
+    font-weight: bold;
+    align-self: center;
+    padding: 0.5rem;
+    border-bottom: var(--border);
+    width: 100%;
+    text-align: center;
+    margin-bottom: 0.5rem;
+}
+
+.struct-field {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.struct-public-fields>.struct-field>.struct-field-name::before {
+    content: "+ ";
+}
+
+.struct-private-fields>.struct-field>.struct-field-name::before {
+    content: "- ";
+}
+
+.struct-field-type::before {
+    content: ": ";
+}
