@@ -1,7 +1,7 @@
 [package]
 name = "diagram"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -13,5 +13,53 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 syn = { version = "2.0", features = ["full", "extra-traits"] }
 tinytemplate = "1.2.1"
-uuid = { version = "1.11", features = ["v4"] }
+uuid = { version = "1.14", features = ["v4"] }
 walkdir = "2.5"
+
+[lints.rust]
+unsafe_code = "deny"
+deprecated = "warn"
+elided_lifetimes_in_paths = "warn"
+future_incompatible = { level = "warn", priority = -1 }
+nonstandard_style = { level = "warn", priority = -1 }
+rust_2018_idioms = { level = "warn", priority = -1 }
+rust_2021_prelude_collisions = "warn"
+semicolon_in_expressions_from_macros = "warn"
+trivial_numeric_casts = "warn"
+unsafe_op_in_unsafe_fn = "warn"                         # `unsafe_op_in_unsafe_fn` may become the default in future Rust versions: https://github.com/rust-lang/rust/issues/71668
+unused_extern_crates = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+trivial_casts = "allow"
+unused_qualifications = "allow"
+
+[lints.rustdoc]
+all = "warn"
+missing_crate_level_docs = "warn"
+
+[lints.clippy]
+all = "warn"
+correctness = "warn"
+suspicious = "warn"
+style = "warn"
+complexity = "warn"
+perf = "warn"
+pedantic = "warn"
+nursery = "warn"
+unwrap_used = "warn"
+# expect_used = "warn"
+
+# Additional lints from https://rust-lang.github.io/rust-clippy/master/index.html?groups=restriction
+absolute_paths = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+assertions_on_result_states = "warn"
+create_dir = "warn"
+clone_on_ref_ptr = "warn"
+missing_assert_message = "warn"
+panic_in_result_fn = "warn"
+shadow_reuse = "warn"
+str_to_string = "warn"
+todo = "warn"
+unimplemented = "warn"
+wildcard_enum_match_arm = "warn"

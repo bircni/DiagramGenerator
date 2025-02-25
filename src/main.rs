@@ -1,15 +1,9 @@
-#![warn(clippy::pedantic)]
-#![warn(clippy::perf)]
-#![warn(clippy::style)]
-#![deny(clippy::all)]
-
-use std::{cmp::Ordering, env, fs, path::Path};
-
-use anyhow::Context;
+use anyhow::{Context, Error};
 use itertools::Itertools;
 use module::ModContext;
 use serde_json::json;
-use syn::{parse_file, spanned::Spanned, Field, Item, Visibility};
+use std::{cmp::Ordering, env, fs, path::Path};
+use syn::{Field, Item, Visibility, parse_file, spanned::Spanned};
 use tinytemplate::TinyTemplate;
 
 use crate::structs::{StructContext, StructFieldContext};
@@ -38,10 +32,10 @@ const HTML_TEMPLATE: &str = r#"
 </html>
 "#;
 
-fn main() {
-    let path = env::args().nth(1).unwrap();
+fn main() -> anyhow::Result<()> {
+    let path = env::args().nth(1).context("No input file provided")?;
 
-    let contents = parse_file_recursive(path).expect("Failed to parse file");
+    let contents = parse_file_recursive(&path).context(format!("Failed to parse file: {path}"))?;
 
     let mut tt = TinyTemplate::new();
     tt.set_default_formatter(&tinytemplate::format_unescaped);
@@ -50,20 +44,22 @@ fn main() {
         Ok(())
     });
     tt.add_template("html", HTML_TEMPLATE)
-        .expect("Failed to add template");
+        .context("Failed to add template")?;
     let html = tt
         .render("html", &json!({"contents": contents}))
-        .expect("Failed to render template");
+        .context("Failed to render template")?;
 
-    fs::write("diagram.html", html).expect("Failed to write file");
+    fs::write("diagram.html", html).context("Failed to write file")?;
+
+    Ok(())
 }
 
 fn parse_file_recursive<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
     let contents = fs::read_to_string(path.as_ref())
         .context(format!("Failed to read file {}", path.as_ref().display()))?;
 
-    Ok(parse_file(contents.as_str())
-        .unwrap()
+    let parsed_file = parse_file(contents.as_str())?;
+    let string_ret = parsed_file
         .items
         .into_iter()
         .sorted_by(|a, b| match (a, b) {
@@ -71,11 +67,13 @@ fn parse_file_recursive<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
             (_, Item::Mod(_)) => Ordering::Less,
             _ => Ordering::Equal,
         })
-        .map(|i| traverse_ast(path.as_ref(), i))
-        .join(""))
+        .map(|i| traverse_ast(path.as_ref(), i).expect("msg"))
+        .join("");
+
+    Ok(string_ret)
 }
 
-fn traverse_ast<P: AsRef<Path>>(path: P, ast: Item) -> String {
+fn traverse_ast<P: AsRef<Path>>(path: P, ast: Item) -> anyhow::Result<String> {
     match ast {
         /*syn::Item::Impl(imp) => imp
         .items
@@ -111,66 +109,99 @@ fn traverse_ast<P: AsRef<Path>>(path: P, ast: Item) -> String {
                     matches!(f.vis, Visibility::Public(_))
                 });
 
-            StructContext {
+            let public_fields = public
+                .into_iter()
+                .map(|(i, f)| StructFieldContext {
+                    name: f
+                        .ident
+                        .as_ref()
+                        .map_or_else(|| format!("{i}"), ToString::to_string),
+                    type_: f
+                        .ty
+                        .span()
+                        .source_text()
+                        .expect("Could not get source_text"),
+                })
+                .collect();
+
+            let private_fields = private
+                .into_iter()
+                .map(|(i, f)| StructFieldContext {
+                    name: f
+                        .ident
+                        .as_ref()
+                        .map_or_else(|| format!("{i}"), ToString::to_string),
+                    type_: f
+                        .ty
+                        .span()
+                        .source_text()
+                        .expect("Could not get source_text"),
+                })
+                .collect();
+
+            let context = StructContext {
                 name: format!(
                     "{}{}",
                     s.ident,
                     s.generics.span().source_text().unwrap_or_default()
                 ),
-                public_fields: public
-                    .into_iter()
-                    .map(|(i, f)| StructFieldContext {
-                        name: f
-                            .ident
-                            .as_ref()
-                            .map(ToString::to_string)
-                            .unwrap_or(format!("{i}")),
-                        type_: f.ty.span().source_text().unwrap().to_string(),
-                    })
-                    .collect(),
-                private_fields: private
-                    .into_iter()
-                    .map(|(i, f)| StructFieldContext {
-                        name: f
-                            .ident
-                            .as_ref()
-                            .map(ToString::to_string)
-                            .unwrap_or(format!("{i}")),
-                        type_: f.ty.span().source_text().unwrap().to_string(),
-                    })
-                    .collect(),
-            }
-            .to_html()
+                public_fields,
+                private_fields,
+            };
+
+            Ok(context.to_html())
         }
-        Item::Mod(m) => ModContext {
-            name: m.ident.to_string(),
-            contents: if let Some((_, items)) = m.content {
-                items
-                    .into_iter()
-                    .sorted_by(|a, b| match (a, b) {
-                        (Item::Mod(_), _) => Ordering::Greater,
-                        (_, Item::Mod(_)) => Ordering::Less,
-                        _ => Ordering::Equal,
-                    })
-                    .map(|i| traverse_ast(path.as_ref(), i))
-                    .collect()
+        Item::Mod(m) => {
+            let contents: String = if let Some((_, items)) = m.content {
+                let mut result = String::new();
+                for item in items.into_iter().sorted_by(|a, b| match (a, b) {
+                    (Item::Mod(_), _) => Ordering::Greater,
+                    (_, Item::Mod(_)) => Ordering::Less,
+                    _ => Ordering::Equal,
+                }) {
+                    let res = traverse_ast(path.as_ref(), item)?;
+                    result.push_str(&res);
+                }
+
+                Ok::<String, Error>(result)
             } else {
-                parse_file_recursive(
+                let file = parse_file_recursive(
                     path.as_ref()
                         .parent()
-                        .unwrap()
+                        .context("Failed to get parent")?
                         .join(format!("{}.rs", m.ident)),
                 )
                 .or(parse_file_recursive(
                     path.as_ref()
                         .parent()
-                        .unwrap()
+                        .context("Failed to get parent")?
                         .join(format!("{}/mod.rs", m.ident)),
                 ))
-                .expect("Failed to parse mod")
-            },
+                .context("Failed to parse mod")?;
+
+                Ok(file)
+            }?;
+
+            let mod_context = ModContext {
+                name: m.ident.to_string(),
+                contents,
+            };
+            Ok(mod_context.to_html())
         }
-        .to_html(),
-        _ => String::new(),
+        Item::Const(_)
+        | Item::Enum(_)
+        | Item::ExternCrate(_)
+        | Item::Fn(_)
+        | Item::ForeignMod(_)
+        | Item::Impl(_)
+        | Item::Macro(_)
+        | Item::Static(_)
+        | Item::Trait(_)
+        | Item::TraitAlias(_)
+        | Item::Type(_)
+        | Item::Union(_)
+        | Item::Use(_)
+        | Item::Verbatim(_)
+        | _ => Ok(String::new()),
     }
 }
