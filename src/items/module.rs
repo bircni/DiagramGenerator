@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
-use crate::ToHtml;
+use super::ToHtml;
 
 const MODULE_TEMPLATE: &str = r#"
     <div class="module">

@@ -1,5 +1,5 @@
 [package]
-name = "diagram"
+name = "cargo-diagram"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,14 +7,17 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
+clap = { version = "4.5.32", features = ["derive"] }
 itertools = "0.14"
+log = "0.4.27"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+simplelog = "0.12.2"
 syn = { version = "2.0", features = ["full", "extra-traits"] }
 tinytemplate = "1.2.1"
-uuid = { version = "1.14", features = ["v4"] }
-walkdir = "2.5"
+# uuid = { version = "1.14", features = ["v4"] }
+# walkdir = "2.5"
 
 [lints.rust]
 unsafe_code = "deny"
@@ -63,3 +66,6 @@ str_to_string = "warn"
 todo = "warn"
 unimplemented = "warn"
 wildcard_enum_match_arm = "warn"
+
+[package.metadata.cargo-machete]
+ignored = ["proc-macro2"]

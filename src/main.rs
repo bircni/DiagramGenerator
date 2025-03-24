@@ -1,41 +1,48 @@
-use anyhow::{Context, Error};
-use itertools::Itertools;
-use module::ModContext;
+use anyhow::Context;
+use clap::Parser as _;
+use cli::Cli;
+use log::{LevelFilter, log_enabled};
 use serde_json::json;
-use std::{cmp::Ordering, env, fs, path::Path};
-use syn::{Field, Item, Visibility, parse_file, spanned::Spanned};
+use simplelog::{ColorChoice, ConfigBuilder, TerminalMode};
+use std::{env, fs, path::PathBuf, process};
 use tinytemplate::TinyTemplate;
 
-use crate::structs::{StructContext, StructFieldContext};
-
-mod module;
-mod structs;
-
-pub trait ToHtml {
-    fn to_html(&self) -> String;
-}
+mod cli;
+mod items;
+mod logic;
 
 const HTML_TEMPLATE: &str = r#"
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Diagram</title>
+    <title>{title}</title>
     <link rel="stylesheet" href="diagram.css">
 </head>
 <style>{ contents | style }</style>
 <body>
-    <h1>Diagram</h1>
+    <h1>{title}</h1>
 
     {contents}
 </body>
 </html>
 "#;
 
-fn main() -> anyhow::Result<()> {
-    let path = env::args().nth(1).context("No input file provided")?;
+fn main() {
+    if let Err(e) = real_main() {
+        log::error!("{e:#}");
+        process::exit(1);
+    }
+}
 
-    let contents = parse_file_recursive(&path).context(format!("Failed to parse file: {path}"))?;
+fn real_main() -> anyhow::Result<()> {
+    let args = Cli::parse_from(env::args().filter(|a| a != "diagram"));
+    initialize_logger(args.loglevel)?;
+    let path = find_path(args.path)?;
+    log::debug!("Using file: {}", path.display());
+
+    let contents =
+        logic::parse_file_recursive(&path).context(format!("Failed to parse file: {path:?}"))?;
 
     let mut tt = TinyTemplate::new();
     tt.set_default_formatter(&tinytemplate::format_unescaped);
@@ -46,162 +53,89 @@ fn main() -> anyhow::Result<()> {
     tt.add_template("html", HTML_TEMPLATE)
         .context("Failed to add template")?;
     let html = tt
-        .render("html", &json!({"contents": contents}))
+        .render("html", &json!({"title": args.name, "contents": contents}))
         .context("Failed to render template")?;
 
-    fs::write("diagram.html", html).context("Failed to write file")?;
+    let out_path = if let Some(path) = args.output {
+        if !path.exists() {
+            fs::create_dir_all(&path).context("Failed to create directory")?;
+        }
+        path
+    } else {
+        PathBuf::from("diagram.html")
+    };
+
+    fs::write(&out_path, html).context("Failed to write file")?;
+    log::info!("Wrote the output to {}", out_path.display());
 
     Ok(())
 }
 
-fn parse_file_recursive<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
-    let contents = fs::read_to_string(path.as_ref())
-        .context(format!("Failed to read file {}", path.as_ref().display()))?;
+/// Returns the provided path or searches for main.rs or lib.rs in the current directory
+fn find_path(provided_path: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    let file_path = if let Some(path) = provided_path {
+        path
+    } else {
+        log::info!(
+            "No input file provided, searching for main.rs or lib.rs in the current directory"
+        );
+        let mut current_dir = env::current_dir().context("Failed to get current directory")?;
+        if current_dir.join("Cargo.toml").exists() {
+            log::info!("Cargo.toml found, assuming a Cargo project");
+            current_dir = current_dir.join("src");
+        }
+        // find main.rs or lib.rs in the current directory
+        current_dir
+            .read_dir()
+            .context("Failed to read directory")?
+            .find(|entry| {
+                entry
+                    .as_ref()
+                    .map(|file_entry| {
+                        file_entry
+                            .file_name()
+                            .to_string_lossy()
+                            .to_string()
+                            .ends_with("main.rs")
+                            || file_entry
+                                .file_name()
+                                .to_string_lossy()
+                                .to_string()
+                                .ends_with("lib.rs")
+                    })
+                    .unwrap_or(false)
+            })
+            .context(format!(
+                "Failed to find main.rs or lib.rs in {}",
+                current_dir.display()
+            ))?
+            .context("Failed to get directory entry")?
+            .path()
+    };
 
-    let parsed_file = parse_file(contents.as_str())?;
-    let string_ret = parsed_file
-        .items
-        .into_iter()
-        .sorted_by(|a, b| match (a, b) {
-            (Item::Mod(_), _) => Ordering::Greater,
-            (_, Item::Mod(_)) => Ordering::Less,
-            _ => Ordering::Equal,
-        })
-        .map(|i| traverse_ast(path.as_ref(), i).expect("msg"))
-        .join("");
-
-    Ok(string_ret)
+    Ok(file_path)
 }
 
-fn traverse_ast<P: AsRef<Path>>(path: P, ast: Item) -> anyhow::Result<String> {
-    match ast {
-        /*syn::Item::Impl(imp) => imp
-        .items
-        .into_iter()
-        .map(|i| {
-            format!(
-                "{}::{}",
-                imp.self_ty.span().source_text().unwrap(),
-                match i {
-                    syn::ImplItem::Const(c) => {
-                        format!("{}: {}", c.ident, c.ty.span().source_text().unwrap())
-                    }
-                    syn::ImplItem::Fn(f) => f
-                        .sig
-                        .span()
-                        .source_text()
-                        .unwrap()
-                        .trim_start_matches("fn ")
-                        .to_string(),
-                    syn::ImplItem::Type(t) => t.span().source_text().unwrap().to_string(),
-                    _ => "".to_string(),
-                }
-            )
-        })
-        .join(""),*/
-        Item::Struct(s) => {
-            let (public, private) = s
-                .fields
-                .clone()
-                .into_iter()
-                .enumerate()
-                .partition::<Vec<(usize, Field)>, _>(|(_, f)| {
-                    matches!(f.vis, Visibility::Public(_))
-                });
-
-            let public_fields = public
-                .into_iter()
-                .map(|(i, f)| StructFieldContext {
-                    name: f
-                        .ident
-                        .as_ref()
-                        .map_or_else(|| format!("{i}"), ToString::to_string),
-                    type_: f
-                        .ty
-                        .span()
-                        .source_text()
-                        .expect("Could not get source_text"),
-                })
-                .collect();
-
-            let private_fields = private
-                .into_iter()
-                .map(|(i, f)| StructFieldContext {
-                    name: f
-                        .ident
-                        .as_ref()
-                        .map_or_else(|| format!("{i}"), ToString::to_string),
-                    type_: f
-                        .ty
-                        .span()
-                        .source_text()
-                        .expect("Could not get source_text"),
-                })
-                .collect();
-
-            let context = StructContext {
-                name: format!(
-                    "{}{}",
-                    s.ident,
-                    s.generics.span().source_text().unwrap_or_default()
-                ),
-                public_fields,
-                private_fields,
-            };
-
-            Ok(context.to_html())
-        }
-        Item::Mod(m) => {
-            let contents: String = if let Some((_, items)) = m.content {
-                let mut result = String::new();
-                for item in items.into_iter().sorted_by(|a, b| match (a, b) {
-                    (Item::Mod(_), _) => Ordering::Greater,
-                    (_, Item::Mod(_)) => Ordering::Less,
-                    _ => Ordering::Equal,
-                }) {
-                    let res = traverse_ast(path.as_ref(), item)?;
-                    result.push_str(&res);
-                }
-
-                Ok::<String, Error>(result)
-            } else {
-                let file = parse_file_recursive(
-                    path.as_ref()
-                        .parent()
-                        .context("Failed to get parent")?
-                        .join(format!("{}.rs", m.ident)),
-                )
-                .or(parse_file_recursive(
-                    path.as_ref()
-                        .parent()
-                        .context("Failed to get parent")?
-                        .join(format!("{}/mod.rs", m.ident)),
-                ))
-                .context("Failed to parse mod")?;
-
-                Ok(file)
-            }?;
-
-            let mod_context = ModContext {
-                name: m.ident.to_string(),
-                contents,
-            };
-            Ok(mod_context.to_html())
-        }
-        Item::Const(_)
-        | Item::Enum(_)
-        | Item::ExternCrate(_)
-        | Item::Fn(_)
-        | Item::ForeignMod(_)
-        | Item::Impl(_)
-        | Item::Macro(_)
-        | Item::Static(_)
-        | Item::Trait(_)
-        | Item::TraitAlias(_)
-        | Item::Type(_)
-        | Item::Union(_)
-        | Item::Use(_)
-        | Item::Verbatim(_)
-        | _ => Ok(String::new()),
+/// Initialize the logger
+/// # Errors
+/// Fails if the logger could not be initialized
+fn initialize_logger(log_level: LevelFilter) -> anyhow::Result<()> {
+    let filter = if cfg!(debug_assertions) {
+        LevelFilter::max()
+    } else {
+        log_level
+    };
+    if !log_enabled!(filter.to_level().context("Failed to get log level")?) {
+        return simplelog::TermLogger::init(
+            filter,
+            ConfigBuilder::new()
+                // suppress all logs from dependencies
+                .add_filter_allow_str("cargo_diagram")
+                .build(),
+            TerminalMode::Mixed,
+            ColorChoice::Auto,
+        )
+        .context("Failed to initialize logger");
     }
+    Ok(())
 }
