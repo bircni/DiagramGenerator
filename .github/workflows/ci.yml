@@ -21,7 +21,7 @@ jobs:
           lfs: true
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.85
+          toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
       - name: cargo build
@@ -37,7 +37,7 @@ jobs:
           lfs: true
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.85
+          toolchain: stable
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
 
@@ -56,7 +56,7 @@ jobs:
     steps:
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.85
+          toolchain: stable
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - run: cargo fetch
@@ -75,7 +75,7 @@ jobs:
     steps:
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.85
+          toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
       - name: Machete

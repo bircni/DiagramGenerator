@@ -1,5 +1,8 @@
+use anyhow::Context as _;
 use serde::Serialize;
 use tinytemplate::TinyTemplate;
+
+use crate::items::ToHtml;
 
 const STRUCT_TEMPLATE: &str = r#"
     <div class="struct">
@@ -36,14 +39,14 @@ pub struct StructFieldContext {
     pub type_: String,
 }
 
-impl StructContext {
-    pub fn to_html(&self) -> String {
+impl ToHtml for StructContext {
+    fn to_html(&self) -> anyhow::Result<String> {
         let mut tt = TinyTemplate::new();
 
         tt.add_template("struct", STRUCT_TEMPLATE)
-            .expect("Failed to add template");
+            .context("Failed to add template")?;
 
         tt.render("struct", self)
-            .expect("Failed to render template")
+            .context("Failed to render template")
     }
 }
