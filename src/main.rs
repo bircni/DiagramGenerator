@@ -4,8 +4,28 @@ use cli::Cli;
 use log::{LevelFilter, log_enabled};
 use serde_json::json;
 use simplelog::{ColorChoice, ConfigBuilder, TerminalMode};
-use std::{env, fs, path::PathBuf, process};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process,
+};
 use tinytemplate::TinyTemplate;
+
+/// Pipe operator for functional-style programming
+trait Pipe<T> {
+    fn pipe<U, F>(self, f: F) -> U
+    where
+        F: FnOnce(T) -> U;
+}
+
+impl<T> Pipe<T> for T {
+    fn pipe<U, F>(self, f: F) -> U
+    where
+        F: FnOnce(T) -> U,
+    {
+        f(self)
+    }
+}
 
 mod cli;
 mod items;
@@ -17,13 +37,21 @@ const HTML_TEMPLATE: &str = r#"
 <head>
     <meta charset="UTF-8">
     <title>{title}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="diagram.css">
 </head>
-<style>{ contents | style }</style>
+<style>{style_contents}</style>
 <body>
-    <h1>{title}</h1>
+    <header>
+        <h1>{title}</h1>
+        <div class="controls">
+            <p class="instruction">Click module names to collapse/expand</p>
+        </div>
+    </header>
 
-    {contents}
+    <main id="content">
+        {contents}
+    </main>
 </body>
 </html>
 "#;
@@ -41,19 +69,22 @@ fn real_main() -> anyhow::Result<()> {
     let path = find_path(args.path)?;
     log::debug!("Using file: {}", path.display());
 
-    let contents =
-        logic::parse_file_recursive(&path).context(format!("Failed to parse file: {path:?}"))?;
+    let contents = logic::parse_file_recursive(&path, args.include_tests)
+        .context(format!("Failed to parse file: {}", path.display()))?;
 
     let mut tt = TinyTemplate::new();
     tt.set_default_formatter(&tinytemplate::format_unescaped);
-    tt.add_formatter("style", |_, string| {
-        string.push_str(include_str!("style.css"));
-        Ok(())
-    });
     tt.add_template("html", HTML_TEMPLATE)
         .context("Failed to add template")?;
     let html = tt
-        .render("html", &json!({"title": args.name, "contents": contents}))
+        .render(
+            "html",
+            &json!({
+                "title": args.name,
+                "contents": contents,
+                "style_contents": include_str!("style.css")
+            }),
+        )
         .context("Failed to render template")?;
 
     let out_path = if let Some(path) = args.output {
@@ -72,48 +103,78 @@ fn real_main() -> anyhow::Result<()> {
 }
 
 /// Returns the provided path or searches for main.rs or lib.rs in the current directory
+/// If provided path is a repository root, automatically finds the entry point
 fn find_path(provided_path: Option<PathBuf>) -> anyhow::Result<PathBuf> {
     let file_path = if let Some(path) = provided_path {
-        path
+        // Check if the provided path is a directory (repository root)
+        if path.is_dir() {
+            log::info!(
+                "Directory provided: {}, searching for entry point",
+                path.display()
+            );
+            find_entry_point_in_directory(&path)?
+        } else {
+            // It's already a file path
+            path
+        }
     } else {
         log::info!(
             "No input file provided, searching for main.rs or lib.rs in the current directory"
         );
-        let mut current_dir = env::current_dir().context("Failed to get current directory")?;
-        if current_dir.join("Cargo.toml").exists() {
-            log::info!("Cargo.toml found, assuming a Cargo project");
-            current_dir = current_dir.join("src");
-        }
-        // find main.rs or lib.rs in the current directory
-        current_dir
-            .read_dir()
-            .context("Failed to read directory")?
-            .find(|entry| {
-                entry
-                    .as_ref()
-                    .map(|file_entry| {
-                        file_entry
-                            .file_name()
-                            .to_string_lossy()
-                            .to_string()
-                            .ends_with("main.rs")
-                            || file_entry
-                                .file_name()
-                                .to_string_lossy()
-                                .to_string()
-                                .ends_with("lib.rs")
-                    })
-                    .unwrap_or(false)
-            })
-            .context(format!(
-                "Failed to find main.rs or lib.rs in {}",
-                current_dir.display()
-            ))?
-            .context("Failed to get directory entry")?
-            .path()
+        let current_dir = env::current_dir().context("Failed to get current directory")?;
+        find_entry_point_in_directory(&current_dir)?
     };
 
     Ok(file_path)
+}
+
+/// Find the main entry point (main.rs or lib.rs) in a given directory
+fn find_entry_point_in_directory(dir: &Path) -> anyhow::Result<PathBuf> {
+    let mut search_dir = dir.to_path_buf();
+
+    // Check if this is a Cargo project root
+    if search_dir.join("Cargo.toml").exists() {
+        log::info!(
+            "Cargo.toml found in {}, assuming a Cargo project",
+            search_dir.display()
+        );
+        search_dir = search_dir.join("src");
+
+        // First try to find lib.rs (library crate)
+        let lib_path = search_dir.join("lib.rs");
+        if lib_path.exists() {
+            log::info!("Found lib.rs at {}", lib_path.display());
+            return Ok(lib_path);
+        }
+
+        // Then try main.rs (binary crate)
+        let main_path = search_dir.join("main.rs");
+        if main_path.exists() {
+            log::info!("Found main.rs at {}", main_path.display());
+            return Ok(main_path);
+        }
+    }
+
+    // If not a Cargo project or no lib.rs/main.rs in src/, search in the directory itself
+    search_dir
+        .read_dir()
+        .context(format!("Failed to read directory {}", search_dir.display()))?
+        .find(|entry| {
+            entry
+                .as_ref()
+                .map(|file_entry| {
+                    let file_name = file_entry.file_name().to_string_lossy().to_string();
+                    file_name == "lib.rs" || file_name == "main.rs"
+                })
+                .unwrap_or(false)
+        })
+        .context(format!(
+            "Failed to find main.rs or lib.rs in {}",
+            search_dir.display()
+        ))?
+        .context("Failed to get directory entry")?
+        .path()
+        .pipe(Ok)
 }
 
 /// Initialize the logger
