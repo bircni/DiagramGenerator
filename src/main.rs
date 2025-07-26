@@ -56,14 +56,7 @@ const HTML_TEMPLATE: &str = r#"
 </html>
 "#;
 
-fn main() {
-    if let Err(e) = real_main() {
-        log::error!("{e:#}");
-        process::exit(1);
-    }
-}
-
-fn real_main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let args = Cli::parse_from(env::args().filter(|a| a != "diagram"));
     initialize_logger(args.loglevel)?;
     let path = find_path(args.path)?;
