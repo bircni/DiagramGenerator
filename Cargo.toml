@@ -4,6 +4,7 @@ description = "A tool for generating a diagram for a Rust project based on its s
 repository = "https://github.com/bircni/DiagramGenerator"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 authors = ["bircni", "fabus1184"]
 readme = "README.md"
 keywords = ["diagram", "generator", "rust", "cli"]
