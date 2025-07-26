@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [0.1.1](https://github.com/bircni/DiagramGenerator/compare/0.1.0..0.1.1) - 2025-07-26
+
+### Miscellaneous Chores
+
+- add LICENSE file and specify MIT license in Cargo.toml - ([bef61e8](https://github.com/bircni/DiagramGenerator/commit/bef61e8f2e94d98cc8d6b2106d98316f637d77ea)) - Nicolas
+
 ## [0.1.0] - 2025-07-26
 
 ### Continuous Integration
@@ -15,6 +21,10 @@ All notable changes to this project will be documented in this file. See [conven
 ### Features
 
 - handle enums, functions and implementation blocks & improve html output([#2](https://github.com/bircni/DiagramGenerator/issues/2)) - ([ebbdaa3](https://github.com/bircni/DiagramGenerator/commit/ebbdaa3addcd3af10988b2817289bf728fc1549d)) - Nicolas
+
+### Miscellaneous Chores
+
+- **(release)** 0.1.0 - ([5b2eae3](https://github.com/bircni/DiagramGenerator/commit/5b2eae3837b147b3d863ff85420583d911a1351e)) - Nicolas
 
 ### Tests
 
