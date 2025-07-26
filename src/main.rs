@@ -7,7 +7,6 @@ use simplelog::{ColorChoice, ConfigBuilder, TerminalMode};
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    process,
 };
 use tinytemplate::TinyTemplate;
 
@@ -29,7 +28,9 @@ impl<T> Pipe<T> for T {
 
 mod cli;
 mod items;
-mod logic;
+pub mod logic;
+#[cfg(test)]
+mod tests;
 
 const HTML_TEMPLATE: &str = r#"
 <!DOCTYPE html>

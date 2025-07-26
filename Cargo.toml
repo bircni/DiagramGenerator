@@ -2,11 +2,12 @@
 name = "diagen"
 description = "A tool for generating a diagram for a Rust project based on its source code."
 repository = "https://github.com/bircni/DiagramGenerator"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2024"
 authors = ["bircni", "fabus1184"]
 readme = "README.md"
 keywords = ["diagram", "generator", "rust", "cli"]
+exclude = ["src/tests/*"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

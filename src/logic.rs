@@ -12,7 +12,7 @@ use crate::items::{
     structs::{StructContext, StructFieldContext},
 };
 
-pub fn parse_file_recursive<P: AsRef<Path>>(
+pub(crate) fn parse_file_recursive<P: AsRef<Path>>(
     path: P,
     include_tests: bool,
 ) -> anyhow::Result<String> {
@@ -47,7 +47,7 @@ fn parse_file_recursive_with_context<P: AsRef<Path>>(
 }
 
 /// Organize items by type and render them in a structured way
-fn organize_and_render_items<P: AsRef<Path>>(
+pub(crate) fn organize_and_render_items<P: AsRef<Path>>(
     path: P,
     items: Vec<Item>,
     include_tests: bool,
