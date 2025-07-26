@@ -16,7 +16,7 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Build cargo-binlist
+      - name: Build diagen
         run: |
           cargo build --release
 
@@ -32,9 +32,9 @@ jobs:
         shell: bash
         run: |
           ARCHIVE_TARGET="x86_64-pc-windows-msvc"
-          ARCHIVE_NAME="cargo-binlist-${{ steps.tagName.outputs.tag }}-$ARCHIVE_TARGET"
+          ARCHIVE_NAME="diagen-${{ steps.tagName.outputs.tag }}-$ARCHIVE_TARGET"
           ARCHIVE_FILE="${ARCHIVE_NAME}.zip"
-          7z a ${ARCHIVE_FILE} ./target/release/cargo-binlist.exe
+          7z a ${ARCHIVE_FILE} ./target/release/diagen.exe
           echo "::set-output name=file::${ARCHIVE_FILE}"
           echo "::set-output name=name::${ARCHIVE_NAME}.zip"
 
@@ -72,13 +72,13 @@ jobs:
         run: |
           sudo apt-get install musl-tools
 
-      - name: Build cargo-binlist
+      - name: Build diagen
         run: |
           cargo build --release --target ${{ matrix.target }}
 
       - name: Strip binary
         run: |
-          strip target/${{ matrix.target }}/release/cargo-binlist
+          strip target/${{ matrix.target }}/release/diagen
 
       - name: Get the version
         id: tagName
@@ -89,9 +89,9 @@ jobs:
       - name: Build package
         id: package
         run: |
-          TAR_FILE=cargo-binlist-${{ steps.tagName.outputs.tag }}-${{ matrix.target }}
+          TAR_FILE=diagen-${{ steps.tagName.outputs.tag }}-${{ matrix.target }}
           cd target/${{ matrix.target }}/release
-          tar -czvf $GITHUB_WORKSPACE/$TAR_FILE.tar.gz cargo-binlist
+          tar -czvf $GITHUB_WORKSPACE/$TAR_FILE.tar.gz diagen
           echo ::set-output "name=name::${TAR_FILE}"
           echo ::set-output "name=file::${TAR_FILE}.tar.gz "
 
