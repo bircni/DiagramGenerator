@@ -1,0 +1,95 @@
+<svg font-family="monospace" font-size="12" height="840px" style="background-color: white" width="1060px" xmlns="http://www.w3.org/2000/svg">
+<text x="30" y="15">
+mod logic
+</text>
+<rect fill="rgba(250, 255, 204, 0.5)" height="160" id="0" rx="5" ry="5" stroke="black" width="1000" x="20" y="20"/>
+<text x="40" y="40">
+struct ItemVisitor {...}
+</text>
+<text x="40" y="60">
+impl ItemVisitor&lt;'a, V&gt; {
+</text>
+<text x="60" y="80">
+fn visit_file(...) -&gt; anyhow::Result&lt;()&gt;
+</text>
+<text x="60" y="100">
+fn visit_item(...) -&gt; anyhow::Result&lt;()&gt;
+</text>
+<text x="40" y="120">
+}
+</text>
+<text x="40" y="140">
+trait Visualizer { ... }
+</text>
+<text x="30" y="215">
+mod svg
+</text>
+<rect fill="rgba(250, 255, 204, 0.5)" height="480" id="1" rx="5" ry="5" stroke="black" width="1000" x="20" y="220"/>
+<text x="40" y="240">
+struct SvgWriter {...}
+</text>
+<text x="40" y="260">
+impl SvgWriter {
+</text>
+<text x="60" y="280">
+fn new(...) -&gt; Self
+</text>
+<text x="60" y="300">
+fn finish(...) -&gt; anyhow::Result&lt;()&gt;
+</text>
+<text x="60" y="320">
+fn next_id(...) -&gt; String
+</text>
+<text x="40" y="340">
+}
+</text>
+<text x="40" y="360">
+impl SvgWriter {
+</text>
+<text x="60" y="380">
+fn open_mod(...) 
+</text>
+<text x="60" y="400">
+fn close_mod(...) 
+</text>
+<text x="60" y="420">
+fn push_const(...) 
+</text>
+<text x="60" y="440">
+fn push_enum(...) 
+</text>
+<text x="60" y="460">
+fn push_fn(...) 
+</text>
+<text x="60" y="480">
+fn push_static(...) 
+</text>
+<text x="60" y="500">
+fn push_struct(...) 
+</text>
+<text x="60" y="520">
+fn push_trait(...) 
+</text>
+<text x="60" y="540">
+fn push_impl(...) 
+</text>
+<text x="40" y="560">
+}
+</text>
+<text x="50" y="575">
+mod test
+</text>
+<rect fill="rgba(250, 255, 204, 0.5)" height="60" id="2" rx="5" ry="5" stroke="black" width="1000" x="40" y="580"/>
+<text x="60" y="600">
+struct Teeeest {...}
+</text>
+<text x="20" y="740">
+struct Cli {...}
+</text>
+<text x="20" y="760">
+fn initialize_logger(...) -&gt; anyhow::Result&lt;()&gt;
+</text>
+<text x="20" y="780">
+fn main(...) -&gt; anyhow::Result&lt;()&gt;
+</text>
+</svg>
