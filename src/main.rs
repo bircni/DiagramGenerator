@@ -2,10 +2,12 @@ use anyhow::Context;
 use clap::Parser as _;
 use log::LevelFilter;
 use simplelog::{ColorChoice, ConfigBuilder, TerminalMode};
-use std::env;
 
 mod logic;
 mod svg;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(clap::Parser)]
 #[command(author, version, about)]
@@ -45,7 +47,7 @@ fn initialize_logger(log_level: LevelFilter) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    let args = Cli::try_parse_from(env::args()).expect("Failed to parse command line arguments");
+    let args = Cli::parse();
     initialize_logger(args.loglevel)?;
 
     let cargo_context = cargo::GlobalContext::default()?;
@@ -71,16 +73,34 @@ fn main() -> anyhow::Result<()> {
         };
         log::info!("Target source path: {}", src.display());
 
-        let output = args.output_dir.join(format!("{}.svg", target.name()));
+        let filename = format_output_filename(target.name(), target.kind());
+        let output = args.output_dir.join(filename);
         std::fs::create_dir_all(&args.output_dir).context("Failed to create output directory")?;
 
         let mut visualizer = svg::SvgWriter::new(output);
 
-        logic::ItemVisitor::visit_file(src, &mut visualizer)
+        logic::ItemVisitor::visit_file(src, &mut visualizer, args.include_tests)
             .context("Failed to visit items in file")?;
 
         visualizer.finish()?;
     }
 
     Ok(())
+}
+
+pub(crate) fn format_output_filename(
+    target_name: &str,
+    target_kind: &cargo::core::manifest::TargetKind,
+) -> String {
+    use cargo::core::manifest::TargetKind;
+    let kind_suffix = match target_kind {
+        TargetKind::Lib(_) => "lib",
+        TargetKind::Bin => "bin",
+        TargetKind::Test => "test",
+        TargetKind::Bench => "bench",
+        TargetKind::ExampleLib(_) => "example-lib",
+        TargetKind::ExampleBin => "example-bin",
+        TargetKind::CustomBuild => "build",
+    };
+    format!("{target_name}-{kind_suffix}.svg")
 }
