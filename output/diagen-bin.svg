@@ -1,0 +1,217 @@
+<svg font-family="monospace" font-size="12" height="1620px" style="background-color: white" width="1060px" xmlns="http://www.w3.org/2000/svg">
+<text fill="#777" x="30" y="35">
+mod logic
+</text>
+<rect fill="rgba(250, 255, 204, 0.5)" height="430" id="0" rx="5" ry="5" stroke="black" width="1000" x="20" y="20"/>
+<text fill="#111" x="40" y="50">
+pub struct ItemVisitor&lt;'a, V&gt; {
+</text>
+<text fill="#777" x="60" y="70">
+current_dir: std::path::PathBuf
+</text>
+<text fill="#777" x="60" y="90">
+v: &amp;'a mut V
+</text>
+<text fill="#777" x="60" y="110">
+include_tests: bool
+</text>
+<text fill="#777" x="60" y="130">
+pending_impls: HashMap&lt;String, Vec&lt;syn::ItemImpl&gt;&gt;
+</text>
+<text fill="#222" x="40" y="150">
+}
+</text>
+<text fill="#222" x="40" y="170">
+impl&lt;'a, V&gt; ItemVisitor&lt;'a, V&gt; {
+</text>
+<text fill="#111" x="60" y="190">
+pub fn visit_file(...) -&gt; anyhow::Result&lt;()&gt;
+</text>
+<text fill="#777" x="60" y="210">
+fn should_skip(...) -&gt; bool
+</text>
+<text fill="#777" x="60" y="230">
+fn collect_impls(...)
+</text>
+<text fill="#777" x="60" y="250">
+fn flush_impls_for(...)
+</text>
+<text fill="#777" x="60" y="270">
+fn flush_remaining_impls(...)
+</text>
+<text fill="#777" x="60" y="290">
+fn visit_item(...) -&gt; anyhow::Result&lt;()&gt;
+</text>
+<text fill="#222" x="40" y="310">
+}
+</text>
+<text fill="#777" x="40" y="330">
+fn is_test_attribute(...) -&gt; bool
+</text>
+<text fill="#777" x="40" y="350">
+fn type_key_from_def(...) -&gt; String
+</text>
+<text fill="#777" x="40" y="370">
+fn type_key_from_impl(...) -&gt; String
+</text>
+<text fill="#777" x="40" y="390">
+fn type_key_from_tokens(...) -&gt; String
+</text>
+<text fill="#111" x="40" y="410">
+pub trait Visualizer { ... }
+</text>
+<text fill="#777" x="30" y="505">
+mod svg
+</text>
+<rect fill="rgba(250, 255, 204, 0.5)" height="850" id="1" rx="5" ry="5" stroke="black" width="1000" x="20" y="490"/>
+<text fill="#111" x="40" y="520">
+pub struct SvgWriter {
+</text>
+<text fill="#777" x="60" y="540">
+output: std::path::PathBuf
+</text>
+<text fill="#777" x="60" y="560">
+position: (f32, f32)
+</text>
+<text fill="#777" x="60" y="580">
+svg: svg::Document
+</text>
+<text fill="#777" x="60" y="600">
+open_mods: Vec&lt;(f32, f32, String)&gt;
+</text>
+<text fill="#777" x="60" y="620">
+id_counter: usize
+</text>
+<text fill="#222" x="40" y="640">
+}
+</text>
+<text fill="#222" x="40" y="660">
+impl SvgWriter {
+</text>
+<text fill="#111" x="60" y="680">
+pub fn new(...) -&gt; Self
+</text>
+<text fill="#111" x="60" y="700">
+pub fn finish(...) -&gt; anyhow::Result&lt;()&gt;
+</text>
+<text fill="#777" x="60" y="720">
+fn next_id(...) -&gt; String
+</text>
+<text fill="#777" x="60" y="740">
+fn write_line_at(...)
+</text>
+<text fill="#777" x="60" y="760">
+fn write_line_at_colored(...)
+</text>
+<text fill="#777" x="60" y="780">
+fn write_line(...)
+</text>
+<text fill="#777" x="60" y="800">
+fn write_line_colored(...)
+</text>
+<text fill="#222" x="40" y="820">
+}
+</text>
+<text fill="#222" x="40" y="840">
+impl crate::logic::Visualizer for SvgWriter {
+</text>
+<text fill="#777" x="60" y="860">
+fn open_mod(...)
+</text>
+<text fill="#777" x="60" y="880">
+fn close_mod(...)
+</text>
+<text fill="#777" x="60" y="900">
+fn push_const(...)
+</text>
+<text fill="#777" x="60" y="920">
+fn push_enum(...)
+</text>
+<text fill="#777" x="60" y="940">
+fn push_fn(...)
+</text>
+<text fill="#777" x="60" y="960">
+fn push_static(...)
+</text>
+<text fill="#777" x="60" y="980">
+fn push_struct(...)
+</text>
+<text fill="#777" x="60" y="1000">
+fn push_trait(...)
+</text>
+<text fill="#777" x="60" y="1020">
+fn push_impl(...)
+</text>
+<text fill="#222" x="40" y="1040">
+}
+</text>
+<text fill="#777" x="40" y="1060">
+const DEFAULT_TEXT_COLOR: &amp;str
+</text>
+<text fill="#777" x="40" y="1080">
+const COLOR_PUBLIC: &amp;str
+</text>
+<text fill="#777" x="40" y="1100">
+const COLOR_CRATE: &amp;str
+</text>
+<text fill="#777" x="40" y="1120">
+const COLOR_RESTRICTED: &amp;str
+</text>
+<text fill="#777" x="40" y="1140">
+const COLOR_PRIVATE: &amp;str
+</text>
+<text fill="#111" x="40" y="1160">
+pub fn format_visibility(...) -&gt; String
+</text>
+<text fill="#777" x="40" y="1180">
+fn visibility_color(...) -&gt; &amp;'static str
+</text>
+<text fill="#111" x="40" y="1200">
+pub fn format_generics(...) -&gt; String
+</text>
+<text fill="#111" x="40" y="1220">
+pub fn format_return_type(...) -&gt; String
+</text>
+<text fill="#111" x="40" y="1240">
+pub fn format_type&lt;T&gt;(...) -&gt; String
+</text>
+<text fill="#111" x="40" y="1260">
+pub fn format_path(...) -&gt; String
+</text>
+<text fill="#777" x="40" y="1280">
+fn compact_tokens(...) -&gt; String
+</text>
+<text fill="#777" x="40" y="1300">
+fn is_tight_punct(...) -&gt; bool
+</text>
+<text fill="#111" x="20" y="1380">
+pub struct Cli {
+</text>
+<text fill="#111" x="40" y="1400">
+pub path: std::path::PathBuf
+</text>
+<text fill="#111" x="40" y="1420">
+pub output_dir: std::path::PathBuf
+</text>
+<text fill="#111" x="40" y="1440">
+pub loglevel: LevelFilter
+</text>
+<text fill="#111" x="40" y="1460">
+pub name: String
+</text>
+<text fill="#111" x="40" y="1480">
+pub include_tests: bool
+</text>
+<text fill="#222" x="20" y="1500">
+}
+</text>
+<text fill="#777" x="20" y="1520">
+fn initialize_logger(...) -&gt; anyhow::Result&lt;()&gt;
+</text>
+<text fill="#777" x="20" y="1540">
+fn main(...) -&gt; anyhow::Result&lt;()&gt;
+</text>
+<text fill="#333" x="20" y="1560">
+pub(crate) fn format_output_filename(...) -&gt; String
+</text>
+</svg>

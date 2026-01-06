@@ -1,448 +1,290 @@
-use anyhow::Context;
-use itertools::Itertools;
-use std::{fs, path::Path};
-use syn::{Field, Item, Visibility, parse_file, spanned::Spanned};
-
-use crate::items::{
-    ToHtml as _,
-    enums::{EnumContext, EnumVariantContext},
-    functions::FunctionContext,
-    impl_blocks::ImplContext,
-    module::ModContext,
-    structs::{StructContext, StructFieldContext},
-};
-
-pub(crate) fn parse_file_recursive<P: AsRef<Path>>(
-    path: P,
+use anyhow::Context as _;
+use quote::ToTokens as _;
+use std::collections::HashMap;
+pub struct ItemVisitor<'a, V> {
+    current_dir: std::path::PathBuf,
+    v: &'a mut V,
     include_tests: bool,
-) -> anyhow::Result<String> {
-    let contents = fs::read_to_string(path.as_ref())
-        .context(format!("Failed to read file {}", path.as_ref().display()))?;
-
-    let parsed_file = parse_file(contents.as_str())?;
-    let string_ret =
-        organize_and_render_items(path.as_ref(), parsed_file.items, include_tests, false)?;
-
-    Ok(string_ret)
+    pending_impls: HashMap<String, Vec<syn::ItemImpl>>,
 }
 
-/// Helper function for parsing files with test context
-fn parse_file_recursive_with_context<P: AsRef<Path>>(
-    path: P,
-    include_tests: bool,
-    in_test_context: bool,
-) -> anyhow::Result<String> {
-    let contents = fs::read_to_string(path.as_ref())
-        .context(format!("Failed to read file {}", path.as_ref().display()))?;
+impl<'a, V: Visualizer> ItemVisitor<'a, V> {
+    pub fn visit_file(
+        file: impl AsRef<std::path::Path>,
+        visualizer: &'a mut V,
+        include_tests: bool,
+    ) -> anyhow::Result<()> {
+        let mut visitor = ItemVisitor {
+            current_dir: file
+                .as_ref()
+                .parent()
+                .context("Failed to get parent directory")?
+                .to_path_buf(),
+            v: visualizer,
+            include_tests,
+            pending_impls: HashMap::new(),
+        };
 
-    let parsed_file = parse_file(contents.as_str())?;
-    let string_ret = organize_and_render_items(
-        path.as_ref(),
-        parsed_file.items,
-        include_tests,
-        in_test_context,
-    )?;
+        let content = std::fs::read_to_string(file).context("Failed to read file content")?;
 
-    Ok(string_ret)
-}
+        let file = syn::parse_file(&content).context("Failed to parse file")?;
 
-/// Organize items by type and render them in a structured way
-pub(crate) fn organize_and_render_items<P: AsRef<Path>>(
-    path: P,
-    items: Vec<Item>,
-    include_tests: bool,
-    in_test_context: bool,
-) -> anyhow::Result<String> {
-    let mut structs = Vec::new();
-    let mut enums = Vec::new();
-    let mut functions = Vec::new();
-    let mut impls = Vec::new();
-    let mut modules = Vec::new();
-    let mut other_items = Vec::new();
+        visitor.collect_impls(&file.items);
 
-    // Group items by type
-    for item in items {
-        match &item {
-            Item::Struct(_) => structs.push(item),
-            Item::Enum(_) => enums.push(item),
-            Item::Fn(_) => functions.push(item),
-            Item::Impl(_) => impls.push(item),
-            Item::Mod(_) => modules.push(item),
-            Item::Const(_)
-            | Item::ExternCrate(_)
-            | Item::ForeignMod(_)
-            | Item::Macro(_)
-            | Item::Static(_)
-            | Item::Trait(_)
-            | Item::TraitAlias(_)
-            | Item::Type(_)
-            | Item::Union(_)
-            | Item::Use(_)
-            | Item::Verbatim(_)
-            | _ => other_items.push(item),
+        for item in file.items {
+            visitor.visit_item(&item)?;
+        }
+
+        visitor.flush_remaining_impls();
+
+        Ok(())
+    }
+
+    fn should_skip(&self, attrs: &[syn::Attribute]) -> bool {
+        if self.include_tests {
+            return false;
+        }
+
+        attrs.iter().any(is_test_attribute)
+    }
+
+    fn collect_impls(&mut self, items: &[syn::Item]) {
+        for item in items {
+            let syn::Item::Impl(impl_items) = item else {
+                continue;
+            };
+            if self.should_skip(&impl_items.attrs) {
+                continue;
+            }
+            let key = type_key_from_impl(impl_items);
+            self.pending_impls
+                .entry(key)
+                .or_default()
+                .push(impl_items.clone());
         }
     }
 
-    let mut result = String::new();
-
-    // Helper function to create a section with items
-    let create_section =
-        |section_name: &str, items: Vec<Item>, grid_class: &str| -> anyhow::Result<String> {
-            if items.is_empty() {
-                return Ok(String::new());
+    fn flush_impls_for(&mut self, key: &str) {
+        if let Some(items) = self.pending_impls.remove(key) {
+            for impl_item in items {
+                self.v.push_impl(&impl_item);
             }
-
-            let mut section_html = format!(
-                r#"<div class="item-section">
-    <div class="item-section-header">{section_name}</div>
-    <div class="{grid_class}">
-"#
-            );
-
-            for item in items {
-                let rendered = traverse_ast(path.as_ref(), item, include_tests, in_test_context)?;
-                section_html.push_str(&rendered);
-            }
-
-            section_html.push_str("    </div>\n</div>\n\n");
-            Ok(section_html)
-        };
-
-    // Render sections in organized order
-    result.push_str(&create_section("Structs", structs, "structs-grid")?);
-    result.push_str(&create_section("Enums", enums, "enums-grid")?);
-    result.push_str(&create_section("Functions", functions, "functions-grid")?);
-    result.push_str(&create_section(
-        "Implementations",
-        impls,
-        "impl-blocks-grid",
-    )?);
-
-    // Modules get special treatment - they don't need a section wrapper
-    for item in modules.into_iter().chain(other_items) {
-        let rendered = traverse_ast(path.as_ref(), item, include_tests, in_test_context)?;
-        result.push_str(&rendered);
+        }
     }
 
-    Ok(result)
-}
+    fn flush_remaining_impls(&mut self) {
+        let keys: Vec<String> = self.pending_impls.keys().cloned().collect();
+        for key in keys {
+            self.flush_impls_for(&key);
+        }
+    }
 
-/// Check if an attribute list contains test-related attributes
-fn has_test_attributes(attrs: &[syn::Attribute]) -> bool {
-    attrs.iter().any(|attr| {
-        attr.meta.require_path_only().map_or_else(
-            |_| {
-                attr.meta.require_list().is_ok_and(|meta| {
-                    let path_str = meta
-                        .path
-                        .get_ident()
-                        .map(ToString::to_string)
-                        .unwrap_or_default();
-                    if path_str == "cfg" {
-                        // Check if it's cfg(test)
-                        syn::parse2::<syn::Ident>(meta.tokens.clone())
-                            .is_ok_and(|tokens| tokens == "test")
-                    } else {
-                        false
+    #[expect(clippy::too_many_lines, reason = "Matches all syn::Item variants")]
+    fn visit_item(&mut self, item: &syn::Item) -> anyhow::Result<()> {
+        match item {
+            syn::Item::Const(item_const) => {
+                if self.should_skip(&item_const.attrs) {
+                    return Ok(());
+                }
+                self.v.push_const(item_const);
+            }
+            syn::Item::Enum(item_enum) => {
+                if self.should_skip(&item_enum.attrs) {
+                    return Ok(());
+                }
+                self.v.push_enum(item_enum);
+                let key = type_key_from_def(&item_enum.ident, &item_enum.generics);
+                self.flush_impls_for(&key);
+            }
+            syn::Item::ExternCrate(item_extern_crate) => {
+                log::warn!("Ignoring extern crate item: {item_extern_crate:?}");
+            }
+            syn::Item::Fn(item_fn) => {
+                if self.should_skip(&item_fn.attrs) {
+                    return Ok(());
+                }
+                self.v.push_fn(item_fn);
+            }
+            syn::Item::ForeignMod(item_foreign_mod) => {
+                log::warn!("Ignoring foreign mod item: {item_foreign_mod:?}");
+            }
+            syn::Item::Impl(_) | syn::Item::Macro(_) | syn::Item::Type(_) | syn::Item::Use(_) => {}
+            syn::Item::Mod(item_mod) => {
+                if self.should_skip(&item_mod.attrs) {
+                    return Ok(());
+                }
+                self.v.open_mod(item_mod);
+
+                if let Some((_, items)) = &item_mod.content {
+                    // For inline modules, update current_dir to point to where this module's
+                    // file-backed submodules would be located (e.g., mod a { mod b; } looks for a/b.rs)
+                    let nested_dir = self.current_dir.join(item_mod.ident.to_string());
+
+                    let mut module_visitor = ItemVisitor {
+                        current_dir: nested_dir,
+                        v: self.v,
+                        include_tests: self.include_tests,
+                        pending_impls: HashMap::new(),
+                    };
+                    module_visitor.collect_impls(items);
+                    for item in items {
+                        module_visitor.visit_item(item)?;
                     }
-                })
-            },
-            |meta| {
-                let path_str = meta
-                    .get_ident()
-                    .map(ToString::to_string)
-                    .unwrap_or_default();
-                path_str == "test"
-            },
-        )
-    })
+                    module_visitor.flush_remaining_impls();
+                } else {
+                    // load the module from the file system
+                    let possibilities = &[
+                        self.current_dir.join(format!("{}.rs", item_mod.ident)),
+                        self.current_dir.join(format!("{}/mod.rs", item_mod.ident)),
+                    ];
+
+                    let mut found = false;
+                    for path in possibilities {
+                        if path.exists() {
+                            log::info!("Loading module from: {}", path.display());
+                            ItemVisitor::visit_file(path, self.v, self.include_tests)?;
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    anyhow::ensure!(
+                        found,
+                        "Module {} not found in any of the expected paths: {:?}",
+                        item_mod.ident,
+                        possibilities
+                    );
+                }
+
+                self.v.close_mod(item_mod);
+            }
+            syn::Item::Static(item_static) => {
+                if self.should_skip(&item_static.attrs) {
+                    return Ok(());
+                }
+                self.v.push_static(item_static);
+            }
+            syn::Item::Struct(item_struct) => {
+                if self.should_skip(&item_struct.attrs) {
+                    return Ok(());
+                }
+                self.v.push_struct(item_struct);
+                let key = type_key_from_def(&item_struct.ident, &item_struct.generics);
+                self.flush_impls_for(&key);
+            }
+            syn::Item::Trait(item_trait) => {
+                if self.should_skip(&item_trait.attrs) {
+                    return Ok(());
+                }
+                self.v.push_trait(item_trait);
+                let key = type_key_from_def(&item_trait.ident, &item_trait.generics);
+                self.flush_impls_for(&key);
+            }
+            syn::Item::TraitAlias(item_trait_alias) => {
+                log::warn!("Ignoring trait alias item: {item_trait_alias:?}");
+            }
+            syn::Item::Union(item_union) => {
+                log::warn!("Ignoring union item: {item_union:?}");
+            }
+            syn::Item::Verbatim(token_stream) => {
+                log::warn!("Ignoring verbatim item: {token_stream:?}");
+            }
+            _ => {
+                log::warn!("Ignoring unsupported item: {item:?}");
+            }
+        }
+
+        Ok(())
+    }
 }
 
-/// Check if a module is a test module (either named "tests" or has #[cfg(test)])
-fn is_test_module(module: &syn::ItemMod) -> bool {
-    // Check if module has #[cfg(test)] attribute
-    if has_test_attributes(&module.attrs) {
+fn is_test_attribute(attr: &syn::Attribute) -> bool {
+    let path = attr.path();
+    if path.is_ident("test") {
         return true;
     }
 
-    // Check if module name is "tests" (common convention)
-    module.ident == "tests"
-}
+    if path
+        .segments
+        .last()
+        .is_some_and(|segment| segment.ident == "test")
+    {
+        return true;
+    }
 
-/// Check if we're in a test context (inside a test module or function has test attributes)
-fn should_exclude_from_tests(
-    attrs: &[syn::Attribute],
-    in_test_context: bool,
-    include_tests: bool,
-) -> bool {
-    if include_tests {
+    if !path.is_ident("cfg") {
         return false;
     }
 
-    // Exclude if we're in a test context (inside a test module)
-    if in_test_context {
-        return true;
-    }
+    let mut is_test = false;
+    let _ = attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("test") {
+            is_test = true;
+        }
+        Ok(())
+    });
 
-    // Exclude if the item itself has test attributes
-    has_test_attributes(attrs)
+    is_test
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "This function handles multiple item types which naturally makes it long"
-)]
-fn traverse_ast<P: AsRef<Path>>(
-    path: P,
-    ast: Item,
-    include_tests: bool,
-    in_test_context: bool,
-) -> anyhow::Result<String> {
-    match ast {
-        Item::Impl(imp) => {
-            let functions: Vec<String> = imp
-                .items
-                .into_iter()
-                .filter_map(|item| match item {
-                    syn::ImplItem::Fn(f) => {
-                        if should_exclude_from_tests(&f.attrs, in_test_context, include_tests) {
-                            None
-                        } else {
-                            let context = FunctionContext::new(&f.sig, &f.vis);
-                            Some(context.to_html())
-                        }
-                    }
-                    syn::ImplItem::Const(_)
-                    | syn::ImplItem::Type(_)
-                    | syn::ImplItem::Macro(_)
-                    | syn::ImplItem::Verbatim(_)
-                    | _ => None,
-                })
-                .filter_map(anyhow::Result::ok)
-                .collect();
-
-            // Only create impl block if it has functions to display
-            if functions.is_empty() {
-                return Ok(String::new());
-            }
-
-            let target_type = imp
-                .self_ty
-                .span()
-                .source_text()
-                .expect("Could not get source_text");
-
-            let trait_name = imp.trait_.as_ref().map(|(_, path, _)| {
-                path.span()
-                    .source_text()
-                    .expect("Could not get source_text")
-            });
-
-            let generics = if imp.generics.params.is_empty() {
-                None
-            } else {
-                Some(
-                    imp.generics
-                        .span()
-                        .source_text()
-                        .expect("Could not get source_text"),
-                )
-            };
-
-            let context = ImplContext {
-                target_type,
-                trait_name,
-                generics,
-                functions,
-            };
-
-            Ok(context.to_html()?)
-        }
-        Item::Struct(s) => {
-            // Check if this struct should be excluded from tests
-            if should_exclude_from_tests(&s.attrs, in_test_context, include_tests) {
-                return Ok(String::new());
-            }
-
-            let (public, private) = s
-                .fields
-                .clone()
-                .into_iter()
-                .enumerate()
-                .partition::<Vec<(usize, Field)>, _>(|(_, f)| {
-                    matches!(f.vis, Visibility::Public(_))
-                });
-
-            let public_fields = public
-                .into_iter()
-                .map(|(i, f)| StructFieldContext {
-                    name: f
-                        .ident
-                        .as_ref()
-                        .map_or_else(|| format!("{i}"), ToString::to_string),
-                    type_: f
-                        .ty
-                        .span()
-                        .source_text()
-                        .expect("Could not get source_text"),
-                })
-                .collect();
-
-            let private_fields = private
-                .into_iter()
-                .map(|(i, f)| StructFieldContext {
-                    name: f
-                        .ident
-                        .as_ref()
-                        .map_or_else(|| format!("{i}"), ToString::to_string),
-                    type_: f
-                        .ty
-                        .span()
-                        .source_text()
-                        .expect("Could not get source_text"),
-                })
-                .collect();
-
-            let context = StructContext {
-                name: format!(
-                    "{}{}",
-                    s.ident,
-                    s.generics.span().source_text().unwrap_or_default()
-                ),
-                public_fields,
-                private_fields,
-            };
-
-            Ok(context.to_html()?)
-        }
-        Item::Enum(e) => {
-            // Check if this enum should be excluded from tests
-            if should_exclude_from_tests(&e.attrs, in_test_context, include_tests) {
-                return Ok(String::new());
-            }
-
-            let variants = e
-                .variants
-                .into_iter()
-                .map(|v| {
-                    let data = match &v.fields {
-                        syn::Fields::Named(fields) => {
-                            let field_list = fields
-                                .named
-                                .iter()
-                                .map(|f| {
-                                    format!(
-                                        "{}: {}",
-                                        f.ident.as_ref().expect("Named field should have ident"),
-                                        f.ty.span()
-                                            .source_text()
-                                            .expect("Could not get source_text")
-                                    )
-                                })
-                                .join(", ");
-                            Some(format!("{{ {field_list} }}"))
-                        }
-                        syn::Fields::Unnamed(fields) => {
-                            let field_list = fields
-                                .unnamed
-                                .iter()
-                                .map(|f| {
-                                    f.ty.span()
-                                        .source_text()
-                                        .expect("Could not get source_text")
-                                })
-                                .join(", ");
-                            Some(format!("({field_list})"))
-                        }
-                        syn::Fields::Unit => None,
-                    };
-
-                    EnumVariantContext {
-                        name: v.ident.to_string(),
-                        data,
-                    }
-                })
-                .collect();
-
-            let context = EnumContext {
-                name: format!(
-                    "{}{}",
-                    e.ident,
-                    e.generics.span().source_text().unwrap_or_default()
-                ),
-                variants,
-            };
-
-            Ok(context.to_html()?)
-        }
-        Item::Fn(f) => {
-            // Check if this function should be excluded from tests
-            if should_exclude_from_tests(&f.attrs, in_test_context, include_tests) {
-                return Ok(String::new());
-            }
-
-            let context = FunctionContext::new(&f.sig, &f.vis);
-            Ok(context.to_html()?)
-        }
-        Item::Mod(m) => {
-            // Check if this module should be excluded (test modules)
-            if !include_tests && is_test_module(&m) {
-                return Ok(String::new());
-            }
-
-            // Determine if we're entering a test context
-            let entering_test_context = in_test_context || is_test_module(&m);
-
-            let contents: String = if let Some((_, items)) = m.content {
-                // Use the same organized approach for module contents
-                organize_and_render_items(
-                    path.as_ref(),
-                    items,
-                    include_tests,
-                    entering_test_context,
-                )?
-            } else {
-                parse_file_recursive_with_context(
-                    path.as_ref()
-                        .parent()
-                        .context("Failed to get parent")?
-                        .join(format!("{}.rs", m.ident)),
-                    include_tests,
-                    entering_test_context,
-                )
-                .or(parse_file_recursive_with_context(
-                    path.as_ref()
-                        .parent()
-                        .context("Failed to get parent")?
-                        .join(format!("{}/mod.rs", m.ident)),
-                    include_tests,
-                    entering_test_context,
-                ))
-                .context("Failed to parse mod")?
-            };
-
-            // Don't render empty modules
-            if contents.trim().is_empty() {
-                return Ok(String::new());
-            }
-
-            let mod_context = ModContext {
-                name: m.ident.to_string(),
-                contents,
-            };
-            Ok(mod_context.to_html()?)
-        }
-        Item::Const(_)
-        | Item::ExternCrate(_)
-        | Item::ForeignMod(_)
-        | Item::Macro(_)
-        | Item::Static(_)
-        | Item::Trait(_)
-        | Item::TraitAlias(_)
-        | Item::Type(_)
-        | Item::Union(_)
-        | Item::Use(_)
-        | Item::Verbatim(_)
-        | _ => Ok(String::new()),
+fn type_key_from_def(ident: &syn::Ident, generics: &syn::Generics) -> String {
+    let mut text = ident.to_string();
+    if !generics.params.is_empty() {
+        // Only include the angle brackets and params, not the where clause
+        text.push('<');
+        text.push_str(&generics.params.to_token_stream().to_string());
+        text.push('>');
     }
+    type_key_from_tokens(&text)
+}
+
+fn type_key_from_impl(impl_items: &syn::ItemImpl) -> String {
+    match impl_items.self_ty.as_ref() {
+        syn::Type::Path(type_path) => {
+            // Use the full path, not just the last segment
+            let mut text = String::new();
+            for (i, segment) in type_path.path.segments.iter().enumerate() {
+                if i > 0 {
+                    text.push_str("::");
+                }
+                text.push_str(&segment.ident.to_string());
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    text.push_str(&args.to_token_stream().to_string());
+                }
+            }
+            type_key_from_tokens(&text)
+        }
+        syn::Type::Array(_)
+        | syn::Type::BareFn(_)
+        | syn::Type::Group(_)
+        | syn::Type::ImplTrait(_)
+        | syn::Type::Infer(_)
+        | syn::Type::Macro(_)
+        | syn::Type::Never(_)
+        | syn::Type::Paren(_)
+        | syn::Type::Ptr(_)
+        | syn::Type::Reference(_)
+        | syn::Type::Slice(_)
+        | syn::Type::TraitObject(_)
+        | syn::Type::Tuple(_)
+        | syn::Type::Verbatim(_)
+        | _ => type_key_from_tokens(&impl_items.self_ty.to_token_stream().to_string()),
+    }
+}
+
+fn type_key_from_tokens(raw: &str) -> String {
+    raw.chars().filter(|ch| !ch.is_whitespace()).collect()
+}
+
+pub trait Visualizer {
+    fn open_mod(&mut self, item_mod: &syn::ItemMod);
+    fn close_mod(&mut self, item_mod: &syn::ItemMod);
+
+    fn push_const(&mut self, item_const: &syn::ItemConst);
+    fn push_enum(&mut self, item_enum: &syn::ItemEnum);
+    fn push_fn(&mut self, item_fn: &syn::ItemFn);
+    fn push_impl(&mut self, impl_items: &syn::ItemImpl);
+    fn push_static(&mut self, item_static: &syn::ItemStatic);
+    fn push_struct(&mut self, item_struct: &syn::ItemStruct);
+    fn push_trait(&mut self, item_trait: &syn::ItemTrait);
 }

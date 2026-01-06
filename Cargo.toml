@@ -14,15 +14,13 @@ exclude = ["src/tests/*"]
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4.5.32", features = ["derive"] }
-itertools = "0.14"
-log = "0.4.27"
-proc-macro2 = { version = "1", features = ["span-locations"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+cargo = "0.93.0"
+clap = { version = "4.5.53", features = ["derive"] }
+log = "0.4.29"
+quote = "1"
 simplelog = "0.12.2"
+svg = "0.18.0"
 syn = { version = "2.0", features = ["full", "extra-traits"] }
-tinytemplate = "1.2.1"
 
 [lints.rust]
 unsafe_code = "deny"
@@ -56,7 +54,7 @@ allow_attributes_without_reason = "warn"
 assertions_on_result_states = "warn"
 create_dir = "warn"
 clone_on_ref_ptr = "warn"
-# expect_used = "warn"
+expect_used = "warn"
 missing_assert_message = "warn"
 panic_in_result_fn = "warn"
 str_to_string = "warn"
